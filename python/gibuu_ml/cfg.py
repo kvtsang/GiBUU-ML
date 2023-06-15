@@ -1,12 +1,14 @@
 import numpy as np
 
+INVALID_GEN = -1
+INVALID_TOKEN = 0
+SOS_TOKEN, EOS_TOKEN = -999999, 999999
+
 def prepare_cfg(cfg):
     
     # insert SOS and EOS tokens to pdg_list
-    sos_token = -999999 
-    eos_token = 999999
     pdg_list = np.concatenate([
-        [sos_token], sorted(cfg['pdg_list']), [eos_token]
+       [SOS_TOKEN], sorted(cfg['pdg_list']), [EOS_TOKEN]
     ])
     cfg['pdg_list'] = pdg_list
     

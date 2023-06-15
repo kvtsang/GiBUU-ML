@@ -1,6 +1,7 @@
 import h5py
 import numpy as np
 
+from .cfg import INVALID_GEN, SOS_TOKEN, EOS_TOKEN
 from torch.utils.data import Dataset, DataLoader
 
 class GiBUUStepDataset(Dataset):
@@ -13,6 +14,15 @@ class GiBUUStepDataset(Dataset):
         self._col_names = names
         self._col_mask = self._get_col_mask(names, feat_keys)
         self._features = names[self._col_mask]
+
+        self._sos = np.zeros((1,len(names)), dtype=np.float32)
+        self._sos[0,names=='barcode'] = SOS_TOKEN
+        self._sos[0,names=='gen'] = INVALID_GEN
+
+        self._eos = np.zeros_like(self._sos)
+        self._eos[0,names=='barcode'] = EOS_TOKEN
+        self._eos[0,names=='gen'] = INVALID_GEN
+
     
     @staticmethod
     def _get_col_mask(names, cols):
@@ -42,6 +52,10 @@ class GiBUUStepDataset(Dataset):
         
         tgt = self._fp['tgt'][idx]
         tgt_mask = self._fp['tgt_mask'][idx]
+
+        # shift target to include SOS and EOS
+        tgt = np.concatenate((self._sos, tgt, self._eos))
+        tgt_mask = np.concatenate([[True], tgt_mask, [True]])
         
         names = self._col_names
         col_mask = self._col_mask
