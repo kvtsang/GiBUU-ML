@@ -68,11 +68,11 @@ class GiBUUTransformer(nn.Module):
         results["memory"] = memory
         
         # decode
-        x_out = self.decoder(tgt, memory, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask, memory_key_padding_mask=src_key_padding_mask)
+        x_out = self.decoder(tgt, memory, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask, memory_key_padding_mask=memory_key_padding_mask)
         results["decode_output"] = x_out
         
         # convert to final outputs, softmax to #_of_pdgids
-        output = self.act_out(self.out(x_out))
+        output = self.out(x_out)
         results["output"] = output
         
         return results
