@@ -31,8 +31,7 @@ class GiBUUTransformer(nn.Module):
         )
         
         # Last layers to convert to predictions
-        self.out = nn.Linear(len(cfg['tgt_pdgid'][0]), len(cfg['pdg_list'])-1) # -1 to exclude start of sequesnce bc passed cfg is called after prepare_cfg
-        self.act_out = nn.Softmax(dim=1)
+        self.out = nn.Linear(d_model, len(cfg['pdg_list']))
             
     def tokenize(self, pdgids):
         tokens = torch.searchsorted(self.pdg_list, pdgids)
@@ -55,24 +54,25 @@ class GiBUUTransformer(nn.Module):
         
         Creates lower triangular square matrix of tgt_size, where bottom is 0 and top is -inf, to mask future elements.
         """
-        tgt_mask = torch.tril(torch.ones(tgt_size, tgt_size))
-        tgt_mask = tgt_mask.float()
-        tgt_mask = tgt_mask.masked_fill_(tgt_mask==0, float('-inf'))
-        tgt_mask = tgt_mask.masked_fill_(tgt_mask==1, float(0.0))
+        return nn.Transformer.generate_square_subsequent_mask(tgt_size)
         
-    def forward(self, pdgids, feats, src_padding_mask, tgt):
+    def forward(self, src, tgt, src_mask=None, tgt_mask=None, memory_mask=None, src_key_padding_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+        """
+        src: input that has already been embedded 
+        src_mask: padding mask for src
+        """
         # TODO(2023-06-08 kvt) Run encoder + decoder inside forward()
-        # generate target mask
-        tgt_mask = create_tgt_mask(tgt.size(dim=1))
-            
-        # encode
-        x_in = net.embed_input(pdgids, feats)       
-        memory = self.encoder(x_in, src_key_padding_mask=src_padding_mask)
+        results = dict()
+        # encode      
+        memory = self.encoder(src, src_key_padding_mask=src_key_padding_mask)
+        results["memory"] = memory
         
         # decode
-        x_out = self.decoder(tgt, memory, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=src_padding_mask)
+        x_out = self.decoder(tgt, memory, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_key_padding_mask, memory_key_padding_mask=src_key_padding_mask)
+        results["decode_output"] = x_out
         
-        # convert to final outputs, softmax to #_of_pdgids+1 (for end sequence) classes
+        # convert to final outputs, softmax to #_of_pdgids
         output = self.act_out(self.out(x_out))
+        results["output"] = output
         
-        return output
+        return results
