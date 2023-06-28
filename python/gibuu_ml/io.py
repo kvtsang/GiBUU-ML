@@ -1,29 +1,47 @@
 import h5py
 import numpy as np
+import numpy.lib.recfunctions as rfn
 
-from .cfg import INVALID_GEN, SOS_TOKEN, EOS_TOKEN
+from .cfg import SOS_TOKEN, EOS_TOKEN
 from torch.utils.data import Dataset, DataLoader
 
 class GiBUUStepDataset(Dataset):
-    def __init__(self, filepath, feat_keys):
+    def __init__(self, filepath, feat_keys, group_name, sort_tgt_by=None):
         super().__init__()
         self._fp = h5py.File(filepath, 'r')
+        self._grp = self._fp[group_name]
         
-        names = self._fp['src'].attrs['names']
+        names = self._grp['src'].attrs['names']
         
         self._col_names = names
         self._col_mask = self._get_col_mask(names, feat_keys)
+        self._col_idx = {key : i for i, key in enumerate(names)}
         self._features = names[self._col_mask]
+        self._sort_tgt_by = sort_tgt_by
 
-        self._sos = np.zeros((1,len(names)), dtype=np.float32)
-        self._sos[0,names=='barcode'] = SOS_TOKEN
-        self._sos[0,names=='gen'] = INVALID_GEN
+    @staticmethod
+    def encode_id(gibuu_id, charge, is_real):
 
-        self._eos = np.zeros_like(self._sos)
-        self._eos[0,names=='barcode'] = EOS_TOKEN
-        self._eos[0,names=='gen'] = INVALID_GEN
+        #  --------------------------------
+        # |   11    | 10 9 8 7 | 6 5 ... 0 | : bit
+        #  --------------------------------
+        # | is_real |   Q + 8  | GiBUU ID  | : content
+        #  --------------------------------
 
-    
+        bits = gibuu_id \
+            + ((charge+8) << 7) \
+            + is_real * (1 << 11)
+                
+        return bits
+
+    @staticmethod
+    def decode_id(bits):
+        gibuu_id = bits & 0x7f
+        charge = ((bits >> 7) & 0xf) - 8
+        is_real = (bits >> 11) & 0x1
+
+        return gibuu_id, charge, is_real
+
     @staticmethod
     def _get_col_mask(names, cols):
         names = np.asarray(names, dtype='<U')
@@ -40,38 +58,100 @@ class GiBUUStepDataset(Dataset):
         mask[idx] = True
         return mask
         
+    def _get_target(self, idx):
+        tgt = self._grp['tgt'][idx]
+        tgt_collision_mask = self._grp['tgt_collision_mask'][idx]
+        tgt_padding_mask = self._grp['tgt_padding_mask'][idx]
+
+        key = self._sort_tgt_by
+        if key is None:
+            return tgt, tgt_collision_mask, tgt_padding_mask
+
+        i_col = self._col_idx[key]
+        i_sorted = np.flip(np.argsort(tgt[:,i_col]))
+
+        return tgt[i_sorted], tgt_collision_mask[i_sorted], tgt_padding_mask
+
     def __del__(self):
         self._fp.close()
         
     def __len__(self):
-        return len(self._fp['src'])
+        return len(self._grp['info'])
     
     def __getitem__(self, idx):
-        src = self._fp['src'][idx]
-        src_mask = self._fp['src_mask'][idx]
-        
-        tgt = self._fp['tgt'][idx]
-        tgt_mask = self._fp['tgt_mask'][idx]
-
-        # shift target to include SOS and EOS
-        tgt = np.concatenate((self._sos, tgt, self._eos))
-        tgt_mask = np.concatenate([[True], tgt_mask, [True]])
-        
         names = self._col_names
         col_mask = self._col_mask
+
+        iID = self._col_idx['ID']
+        iQ = self._col_idx['charge']
+
+        # info
+        info = self._grp['info']
+        info_data = rfn.unstructured_to_structured(
+            info[idx], names=info.attrs['names']
+        )
+
+        # real particles
+        real= self._fp['real'][info_data['idx_real']]
+
+        # concat real and pert. particles
+        src = self._grp['src'][idx]
+
+        src_feat = np.concatenate([real[:,col_mask], src[:,col_mask]])
+
+        src_padding_mask = np.pad(
+            self._grp['src_padding_mask'][idx], (len(real),0)
+        )
+        src_collision_mask = np.concatenate([
+            self._grp['real_collision_mask'][idx], 
+            self._grp['src_collision_mask'][idx],
+        ])
+
+        src_eid = np.concatenate([
+            self.encode_id(
+                real[:,iID].astype(int), real[:,iQ].astype(int), True
+            ),
+            self.encode_id(
+                src[:,iID].astype(int), src[:,iQ].astype(int), False
+            ),
+        ])
+        src_eid[src_padding_mask] = 0
+        
+        # get target (sort if needed)
+        tgt, tgt_collision_mask, tgt_padding_mask = self._get_target(idx)
+
+        # insert SOS and EOS to target
+        tgt_padding_mask = np.pad(tgt_padding_mask, (1,1))
+        tgt_collision_mask = np.pad(tgt_collision_mask, (1,1))
+        tgt_feat = np.pad(tgt[:,col_mask], ((1,1),(0,0)))
+
+        tgt_eid = np.concatenate([
+            [SOS_TOKEN],
+            self.encode_id(
+                tgt[:,iID].astype(int), tgt[:,iQ].astype(int), False
+            ),
+            [EOS_TOKEN],
+        ])
+        tgt_eid[tgt_padding_mask] = 0
+
+        # prepare output
         output = {
             'idx' : idx,
-            'src_gen' : src[:, names=='gen'].astype(int).squeeze(),
-            'src_pdgid' : src[:, names=='barcode'].astype(int).squeeze(),
-            'src_feat' : src[:, col_mask],
-            'src_mask' : src_mask,
+
+            'src_feat' : src_feat.astype(np.float32),
+            'src_eid' : src_eid,
+            'src_padding_mask' : src_padding_mask,
+            'src_collision_mask' : src_collision_mask,
             
-            'tgt_gen' : tgt[:, names=='gen'].astype(int).squeeze(),
-            'tgt_pdgid' : tgt[:, names=='barcode'].astype(int).squeeze(),
-            'tgt_feat' : tgt[:, col_mask],
-            'tgt_mask' : tgt_mask,
+            'tgt_feat' : tgt_feat.astype(np.float32),
+            'tgt_eid' : tgt_eid,
+            'tgt_padding_mask' : tgt_padding_mask,
+            'tgt_collision_mask' : tgt_collision_mask,
         }
-        
+
+        for key in info_data.dtype.names:
+            output[key] = info_data[key].item()
+
         return output
     
 def dataloader_factory(cfg):
