@@ -3,7 +3,8 @@ import numpy as np
 import numpy.lib.recfunctions as rfn
 
 from .cfg import SOS_TOKEN, EOS_TOKEN
-from torch.utils.data import Dataset, DataLoader
+from glob import glob
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
 class GiBUUStepDataset(Dataset):
     def __init__(self, filepath, feat_keys, group_name, sort_tgt_by=None):
@@ -155,6 +156,21 @@ class GiBUUStepDataset(Dataset):
         return output
     
 def dataloader_factory(cfg):
-    dataset = GiBUUStepDataset(**cfg['dataset'])
-    dataloader = DataLoader(dataset, **cfg['dataloader'])
+    ds_cfg = cfg['dataset'].copy()
+
+    fpatterns = ds_cfg.pop('filepath')
+
+    if isinstance(fpatterns, str):
+        fpatterns = [fpatterns]
+    assert isinstance(fpatterns, list),  \
+        "'filepath' must be a string / a list of strings'"
+
+    files = []
+    for expr in fpatterns:
+        files.extend(glob(expr))
+
+    datasets = [ GiBUUStepDataset(fpath, **ds_cfg) for fpath in files ]
+    big_dataset = ConcatDataset(datasets)
+    dataloader = DataLoader(big_dataset, **cfg['dataloader'])
+
     return dataloader
