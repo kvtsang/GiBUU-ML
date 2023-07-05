@@ -75,18 +75,23 @@ def train(
         model = Model.load_from_checkpoint(load, strict=False, cfg=cfg)
         runtime_cfg['load'] = load
 
-    # -------------------------------------------------------------------------
-    # Trainer + Checkpoint
-    # -------------------------------------------------------------------------
-    ckpt_callback = pl.callbacks.ModelCheckpoint(
-        **train_cfg.get('checkpoint', {})
-    )
 
+    # -------------------------------------------------------------------------
+    # Callbacks
+    # -------------------------------------------------------------------------
+    callbacks = []
+    for class_name, callback_cfg in train_cfg['callback'].items():
+        Cls = getattr(pl.callbacks, class_name)
+        callbacks.append(Cls(**callback_cfg))
+
+    # -------------------------------------------------------------------------
+    # Trainer 
+    # -------------------------------------------------------------------------
     trainer_kwargs = train_cfg.get('trainer', {}).copy()
     trainer_kwargs.update(dict(
         max_epochs=max_epochs,
         logger=logger,
-        callbacks=[ckpt_callback],
+        callbacks=callbacks,
     ))
 
     trainer = pl.Trainer(**trainer_kwargs)
