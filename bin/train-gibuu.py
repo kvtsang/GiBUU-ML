@@ -61,12 +61,10 @@ def train(
     logger = pl.loggers.CSVLogger(**logger_cfg)
     
     # -------------------------------------------------------------------------
-    # model
+    # Model
     # -------------------------------------------------------------------------
     Model = import_from(cfg['class']['model'])
-    train_cfg = cfg.setdefault('training', {})
-    train_cfg['runtime'] = {'max_epochs': max_epochs}
-    runtime_cfg = train_cfg['runtime']
+    runtime_cfg = cfg.setdefault('runtime', {})
 
     if load is None:
         model = Model(cfg)
@@ -75,28 +73,29 @@ def train(
         model = Model.load_from_checkpoint(load, strict=False, cfg=cfg)
         runtime_cfg['load'] = load
 
+    if resume is not None:
+        runtime_cfg['resume'] = resume
 
     # -------------------------------------------------------------------------
     # Callbacks
     # -------------------------------------------------------------------------
+    trainer_cfg = cfg.get('trainer', {}).copy()
+
+    callbacks_cfg = trainer_cfg.pop('callbacks',  {})
     callbacks = []
-    for class_name, callback_cfg in train_cfg['callback'].items():
+    for class_name, callback_cfg in callbacks_cfg.items():
         Cls = getattr(pl.callbacks, class_name)
         callbacks.append(Cls(**callback_cfg))
 
     # -------------------------------------------------------------------------
     # Trainer 
     # -------------------------------------------------------------------------
-    trainer_kwargs = train_cfg.get('trainer', {}).copy()
-    trainer_kwargs.update(dict(
+    trainer_cfg.update(dict(
         max_epochs=max_epochs,
         logger=logger,
         callbacks=callbacks,
     ))
-
-    trainer = pl.Trainer(**trainer_kwargs)
-    if resume is not None:
-        runtime_cfg['resume'] = resume
+    trainer = pl.Trainer(**trainer_cfg)
 
     # -------------------------------------------------------------------------
     # save cfg file
