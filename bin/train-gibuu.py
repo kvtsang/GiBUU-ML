@@ -27,9 +27,9 @@ def train(
         cfg = yaml.safe_load(f)
     prepare_cfg(cfg)
 
-    # TODO(2023-07-03 kvt) set learning rate
     if lr is not None:
-        pass
+        opt_cfg = cfg.setdefault('optimizer', {})
+        opt_cfg['lr'] = lr
 
     # dataloader
     dataloader = dataloader_factory(cfg)

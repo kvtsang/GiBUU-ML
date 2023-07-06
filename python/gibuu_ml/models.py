@@ -14,6 +14,11 @@ class ParticleTypeModel(pl.LightningModule):
         super().__init__()
         
         self.net = GiBUUTransformer(cfg)
+
+        opt_cfg = cfg.setdefault('optimizer', {})
+        opt_cfg.setdefault('lr', 1e-5)
+
+        self.save_hyperparameters()
         
     def training_step(self, batch, batch_idx):
         # Generate src (x_in), tgt (x_out), and masks
@@ -48,5 +53,7 @@ class ParticleTypeModel(pl.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
+        optimizer = torch.optim.Adam(
+            self.parameters(), **self.hparams.cfg['optimizer']
+        )
         return optimizer
