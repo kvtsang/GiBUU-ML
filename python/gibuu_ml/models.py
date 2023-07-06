@@ -68,6 +68,11 @@ class ParticleTypeModel(pl.LightningModule):
         self.log('loss', loss, prog_bar=True)
         return loss
     
+    def validation_step(self, batch, batch_idx):
+        output = self(batch)
+        val_loss = self.func_loss_part_id(batch, output)
+        self.log("val_loss", val_loss)
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.parameters(), **self.hparams.cfg['optimizer']

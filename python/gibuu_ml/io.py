@@ -1,10 +1,11 @@
 import h5py
+import torch
 import numpy as np
 import numpy.lib.recfunctions as rfn
 
 from .cfg import SOS_TOKEN, EOS_TOKEN
 from glob import glob
-from torch.utils.data import Dataset, DataLoader, ConcatDataset
+from torch.utils.data import Dataset, DataLoader, ConcatDataset, random_split
 
 class GiBUUStepDataset(Dataset):
     def __init__(self, filepath, feat_keys, group_name, sort_tgt_by=None):
@@ -171,6 +172,23 @@ def dataloader_factory(cfg):
 
     datasets = [ GiBUUStepDataset(fpath, **ds_cfg) for fpath in files ]
     big_dataset = ConcatDataset(datasets)
-    dataloader = DataLoader(big_dataset, **cfg['dataloader'])
 
-    return dataloader
+    split_cfg = cfg.get('data_random_split')
+    if split_cfg is None:
+        dataloader = DataLoader(big_dataset, **cfg['dataloader'])
+        val_dataloader = None
+    else: 
+        seed = split_cfg.get('seed')
+        if seed is None:
+            generator = torch.default_generator
+        else:
+            generator = torch.Generator().manual_seed(seed)
+
+        train_dataset, val_dataset = random_split(
+            big_dataset, split_cfg['lengths'], generator
+        )
+
+        dataloader = DataLoader(train_dataset, **cfg['dataloader'])
+        val_dataloader = DataLoader(val_dataset, **cfg['val_dataloader'])
+
+    return dataloader, val_dataloader

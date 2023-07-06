@@ -32,7 +32,7 @@ def train(
         opt_cfg['lr'] = lr
 
     # dataloader
-    dataloader = dataloader_factory(cfg)
+    dataloader, val_dataloader = dataloader_factory(cfg)
 
     # uid
     pid = os.getpid()
@@ -110,10 +110,10 @@ def train(
     # start training
     # -------------------------------------------------------------------------
     if resume is None:
-        trainer.fit(model, dataloader)
+        trainer.fit(model, dataloader, val_dataloader)
     else:
         print(f'[INFO] resume {resume}')
-        trainer.fit(model, dataloader, ckpt_path=resume)
+        trainer.fit(model, dataloader, val_dataloader, ckpt_path=resume)
 
 if __name__ == '__main__':
     fire.Fire(train)
