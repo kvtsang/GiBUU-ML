@@ -9,7 +9,6 @@ import sys
 import lightning.pytorch as pl
 
 from gibuu_ml.utils import import_from
-from gibuu_ml.cfg import prepare_cfg
 from gibuu_ml.io import dataloader_factory
 
 def train(
@@ -17,7 +16,6 @@ def train(
     lr=None, load=None, resume=None, 
     max_epochs=10000, uid=False, log=None,
 ):
-
     # check input arguments
     assert (not load) or (not resume), \
         '--load and --resume cannot be used together'
@@ -25,7 +23,6 @@ def train(
     # prepare config dict
     with open(cfg_file, 'r') as f:
         cfg = yaml.safe_load(f)
-    prepare_cfg(cfg)
 
     if lr is not None:
         opt_cfg = cfg.setdefault('optimizer', {})
@@ -80,6 +77,8 @@ def train(
     # Callbacks
     # -------------------------------------------------------------------------
     trainer_cfg = cfg.get('trainer', {}).copy()
+    if trainer_cfg.get('precision') == 'bf16-mixed':
+        torch.set_float32_matmul_precision('medium')
 
     callbacks_cfg = trainer_cfg.pop('callbacks',  {})
     callbacks = []
