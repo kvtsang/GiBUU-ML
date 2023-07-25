@@ -3,12 +3,12 @@ import torch
 import numpy as np
 import numpy.lib.recfunctions as rfn
 
-from .cfg import SOS_TOKEN, EOS_TOKEN
+from .particle import encode_id, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
 from glob import glob
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, random_split
 
 class GiBUUStepDataset(Dataset):
-    def __init__(self, filepath, feat_keys, group_name, sort_tgt_by=None):
+    def __init__(self, filepath, feat_keys, group_name):
         super().__init__()
         self._fp = h5py.File(filepath, 'r')
         self._grp = self._fp[group_name]
@@ -16,36 +16,12 @@ class GiBUUStepDataset(Dataset):
         names = self._grp['src'].attrs['names']
         
         self._col_names = names
-        self._col_mask = self._get_col_mask(names, feat_keys)
+        self._col_mask = self.get_col_mask(names, feat_keys)
         self._col_idx = {key : i for i, key in enumerate(names)}
         self._features = names[self._col_mask]
-        self._sort_tgt_by = sort_tgt_by
 
     @staticmethod
-    def encode_id(gibuu_id, charge, is_real):
-
-        #  --------------------------------
-        # |   11    | 10 9 8 7 | 6 5 ... 0 | : bit
-        #  --------------------------------
-        # | is_real |   Q + 8  | GiBUU ID  | : content
-        #  --------------------------------
-
-        bits = gibuu_id \
-            + ((charge+8) << 7) \
-            + is_real * (1 << 11)
-                
-        return bits
-
-    @staticmethod
-    def decode_id(bits):
-        gibuu_id = bits & 0x7f
-        charge = ((bits >> 7) & 0xf) - 8
-        is_real = (bits >> 11) & 0x1
-
-        return gibuu_id, charge, is_real
-
-    @staticmethod
-    def _get_col_mask(names, cols):
+    def get_col_mask(names, cols):
         names = np.asarray(names, dtype='<U')
         cols = np.asarray(cols, dtype='U')
         
@@ -59,20 +35,9 @@ class GiBUUStepDataset(Dataset):
         mask = np.full(len(names), False)
         mask[idx] = True
         return mask
-        
-    def _get_target(self, idx):
-        tgt = self._grp['tgt'][idx]
-        tgt_collision_mask = self._grp['tgt_collision_mask'][idx]
-        tgt_padding_mask = self._grp['tgt_padding_mask'][idx]
 
-        key = self._sort_tgt_by
-        if key is None:
-            return tgt, tgt_collision_mask, tgt_padding_mask
-
-        i_col = self._col_idx[key]
-        i_sorted = np.flip(np.argsort(tgt[:,i_col]))
-
-        return tgt[i_sorted], tgt_collision_mask[i_sorted], tgt_padding_mask
+    def get_feature_mask(self, feat_names):
+        return self.get_col_mask(self._features, feat_names)
 
     def __del__(self):
         self._fp.close()
@@ -81,7 +46,6 @@ class GiBUUStepDataset(Dataset):
         return len(self._grp['info'])
     
     def __getitem__(self, idx):
-        names = self._col_names
         col_mask = self._col_mask
 
         iID = self._col_idx['ID']
@@ -94,7 +58,7 @@ class GiBUUStepDataset(Dataset):
         )
 
         # real particles
-        real= self._fp['real'][info_data['idx_real']]
+        real = self._fp['real'][info_data['idx_real']]
 
         # concat real and pert. particles
         src = self._grp['src'][idx]
@@ -104,37 +68,29 @@ class GiBUUStepDataset(Dataset):
         src_padding_mask = np.pad(
             self._grp['src_padding_mask'][idx], (len(real),0)
         )
+
         src_collision_mask = np.concatenate([
             self._grp['real_collision_mask'][idx], 
             self._grp['src_collision_mask'][idx],
         ])
 
         src_eid = np.concatenate([
-            self.encode_id(
-                real[:,iID].astype(int), real[:,iQ].astype(int), True
-            ),
-            self.encode_id(
-                src[:,iID].astype(int), src[:,iQ].astype(int), False
-            ),
+            encode_id(real[:,iID].astype(int), real[:,iQ].astype(int), True),
+            encode_id(src[:,iID].astype(int), src[:,iQ].astype(int), False),
         ])
-        src_eid[src_padding_mask] = 0
+        src_eid[src_padding_mask] = PAD_TOKEN
         
-        # get target (sort if needed)
-        tgt, tgt_collision_mask, tgt_padding_mask = self._get_target(idx)
+        # target
+        tgt = self._grp['tgt'][idx]
 
-        # insert SOS and EOS to target
-        tgt_padding_mask = np.pad(tgt_padding_mask, (1,1))
-        tgt_collision_mask = np.pad(tgt_collision_mask, (1,1))
-        tgt_feat = np.pad(tgt[:,col_mask], ((1,1),(0,0)))
+        tgt_feat = tgt[:,col_mask]
+        tgt_collision_mask = self._grp['tgt_collision_mask'][idx]
+        tgt_padding_mask = self._grp['tgt_padding_mask'][idx]
 
-        tgt_eid = np.concatenate([
-            [SOS_TOKEN],
-            self.encode_id(
-                tgt[:,iID].astype(int), tgt[:,iQ].astype(int), False
-            ),
-            [EOS_TOKEN],
-        ])
-        tgt_eid[tgt_padding_mask] = 0
+        tgt_eid = encode_id(
+            tgt[:,iID].astype(int), tgt[:,iQ].astype(int), False
+        )
+        tgt_eid[tgt_padding_mask] = PAD_TOKEN
 
         # prepare output
         output = {

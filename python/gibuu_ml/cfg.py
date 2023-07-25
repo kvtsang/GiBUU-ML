@@ -1,7 +1,5 @@
 import numpy as np
 
-SOS_TOKEN, EOS_TOKEN = 0, 0x7ff
-
 def prepare_cfg(cfg):
     # embedding
     embedding_cfg = cfg['transformer']['embedding']
