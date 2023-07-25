@@ -6,6 +6,7 @@ import fire
 import os
 import time
 import sys
+import shutil
 import lightning.pytorch as pl
 
 from gibuu_ml.utils import import_from
@@ -56,7 +57,7 @@ def train(
     logger_cfg['save_dir'] = log_dir
     logger_cfg['name'] = log_name
     logger = pl.loggers.CSVLogger(**logger_cfg)
-    
+
     # -------------------------------------------------------------------------
     # Model
     # -------------------------------------------------------------------------
@@ -96,14 +97,15 @@ def train(
     ))
     trainer = pl.Trainer(**trainer_cfg)
 
-    # -------------------------------------------------------------------------
+   # -------------------------------------------------------------------------
     # save cfg file
     # -------------------------------------------------------------------------
-    cfg_dir = os.path.join(log_dir, log_name, 'cfg')
+    cfg_dir = logger.root_dir
     if not os.path.isdir(cfg_dir):
         os.makedirs(cfg_dir)
-    with open(f'{cfg_dir}/gibuu_{ts:x}_{pid}.yaml', 'w') as f:
-        yaml.safe_dump(cfg, f)
+    cfg_file = os.path.join(cfg_dir, 'config.yaml')
+    with open(cfg_file, 'w') as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
 
     # -------------------------------------------------------------------------
     # start training
@@ -113,6 +115,11 @@ def train(
     else:
         print(f'[INFO] resume {resume}')
         trainer.fit(model, dataloader, val_dataloader, ckpt_path=resume)
+
+    # -------------------------------------------------------------------------
+    # mv cfg file to log_dir
+    # -------------------------------------------------------------------------
+    shutil.copy(cfg_file, logger.log_dir)
 
 if __name__ == '__main__':
     fire.Fire(train)
