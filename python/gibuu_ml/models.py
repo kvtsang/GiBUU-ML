@@ -109,14 +109,14 @@ class GiBUUStepModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         output, loss = self.forward_and_loss(batch, batch_idx)
         for k,v in loss.items():
-            self.log(k, v, prog_bar=k=='loss', on_epoch=True)
+            self.log(k, v, prog_bar=k=='loss', on_epoch=True, sync_dist=True)
 
         return loss['loss']
     
     def validation_step(self, batch, batch_idx):
         output, loss = self.forward_and_loss(batch, batch_idx)
         for k,v in loss.items():
-            self.log(f'val_{k}', v)
+            self.log(f'val_{k}', v, sync_dist=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
