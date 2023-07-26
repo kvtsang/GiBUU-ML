@@ -97,15 +97,16 @@ def train(
     ))
     trainer = pl.Trainer(**trainer_cfg)
 
-   # -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # save cfg file
     # -------------------------------------------------------------------------
-    cfg_dir = logger.root_dir
-    if not os.path.isdir(cfg_dir):
-        os.makedirs(cfg_dir)
-    cfg_file = os.path.join(cfg_dir, 'config.yaml')
-    with open(cfg_file, 'w') as f:
-        yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
+    if trainer.global_rank == 0:
+        cfg_dir = logger.root_dir
+        if not os.path.isdir(cfg_dir):
+            os.makedirs(cfg_dir)
+        cfg_file = os.path.join(cfg_dir, 'config.yaml')
+        with open(cfg_file, 'w') as f:
+            yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
 
     # -------------------------------------------------------------------------
     # start training
@@ -119,7 +120,8 @@ def train(
     # -------------------------------------------------------------------------
     # mv cfg file to log_dir
     # -------------------------------------------------------------------------
-    shutil.copy(cfg_file, logger.log_dir)
+    if trainer.global_rank == 0:
+        shutil.copy(cfg_file, logger.log_dir)
 
 if __name__ == '__main__':
     fire.Fire(train)
