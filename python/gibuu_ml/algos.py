@@ -35,7 +35,7 @@ def max_bipartite_match(
         # -------------------------------------------
         # match pred. to target using Hungarian algo.
         # -------------------------------------------
-        cost = cost_cls**2 + cost_feat**2
+        cost = cost_cls + cost_feat
         #idx = linear_sum_assignment(cost.cpu())
 
         # FIXME(2023-07-24 kvt) ad-hoc fix for nan cost values
