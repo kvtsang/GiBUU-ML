@@ -24,7 +24,7 @@ class GiBUUStepModel(pl.LightningModule):
 
     def encode_and_forward(self, batch):
         src_enc = self.net.particle_encoder(
-            mask_real_bit(batch['src_eid']), batch['src_feat']
+            batch['src_eid'], batch['src_feat']
         )
 
         output = self(src_enc, batch['src_padding_mask'])
