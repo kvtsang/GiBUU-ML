@@ -48,26 +48,7 @@ class ParticleDecoder(nn.Module):
         part_feat = self.part_feat_dec(x)
         return part_type, part_feat
 
-class TransformerEncoder(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-        
-        layer_cfg = cfg['transformer']['layer']
-        encoder_layer = nn.TransformerEncoderLayer(**layer_cfg)
-        
-        d_model = layer_cfg['d_model']
-        encoder_norm = nn.LayerNorm(d_model)
-        
-        self.encoder = nn.TransformerEncoder(
-            encoder_layer, norm=encoder_norm,
-            **cfg['transformer']['encoder']
-        )
-    
-    def forward(self, src, src_padding_mask=None):
-        out = self.encoder(src, src_key_padding_mask=src_padding_mask)
-        return out
-
-class GiBUUTransformer(nn.Module):
+class GiBUUTransformerEncoder(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         

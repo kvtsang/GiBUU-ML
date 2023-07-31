@@ -2,16 +2,16 @@ import torch
 import torch.nn.functional as F
 import lightning.pytorch as pl
 
-from gibuu_ml.net import GiBUUTransformer, SetCriterion
+from gibuu_ml.net import GiBUUTransformerEncoder, SetCriterion
 from gibuu_ml.algos import max_bipartite_match
 from gibuu_ml.particle import mask_real_bit
 
-class GiBUUStepModel(pl.LightningModule):
+class GiBUUStepModelV2a(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
         
         model_cfg = cfg['model']
-        self.net = GiBUUTransformer(model_cfg)
+        self.net = GiBUUTransformerEncoder(model_cfg)
         self.crit = SetCriterion(**model_cfg['set_criterion'])
 
         opt_cfg = cfg.setdefault('optimizer', {})
