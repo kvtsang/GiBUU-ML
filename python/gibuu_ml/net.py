@@ -1,22 +1,19 @@
 import torch
 from torch import nn
 
-def gen_mlp(
+def get_mlp(
     in_features, hidden_features, hidden_layers, out_features,
-    Activation=nn.LeakyReLU, bias=True
+    Activation=nn.ReLU, bias=True
 ):
-    net = [
-        nn.Linear(in_features, hidden_features, bias=bias),
-        Activation(),
-    ]
     
-    for i in range(hidden_layers):
-        net.extend([
-            nn.Linear(hidden_features, hidden_features, bias=bias),
-            Activation(),
-        ])
-        
-    net.append(nn.Linear(hidden_features, out_features, bias=bias))
+    dims = [in_features] + [hidden_features]*hidden_layers + [out_features]
+    actn = Activation()
+
+    net = []
+    for i in range(len(dims)-1):
+        net.append(nn.Linear(dims[i], dims[i+1], bias=bias))
+        if i < len(dims) - 2:
+            net.append(actn)
     return nn.Sequential(*net)
 
 class ParticleEncoder(nn.Module):
@@ -24,7 +21,7 @@ class ParticleEncoder(nn.Module):
         super().__init__()
         
         self.embedding = nn.Embedding(**cfg['embedding'])
-        self.encoder = gen_mlp(**cfg['particle_encoder'])
+        self.encoder = get_mlp(**cfg['particle_encoder'])
 
     def forward(self, encoded_ids, feats):
         x_out = self.embedding(encoded_ids) + self.encoder(feats)
@@ -34,14 +31,15 @@ class ParticleDecoder(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         
-        dec_cfg = cfg['particle_decoder']
-        in_features = dec_cfg['in_features']
-        out_features = dec_cfg['out_features']
-        num_classes = dec_cfg['num_classes']
-        max_size = dec_cfg['max_size']
+        dec_cfg = cfg['particle_decoder'].copy()
+        num_classes = dec_cfg.pop('num_classes')
+
+        # for bachward compatibility, simply use linear prediction
+        dec_cfg.setdefault('hidden_features', 0)
+        dec_cfg.setdefault('hidden_layers', 0)
         
-        self.part_type_cls = nn.Linear(in_features, num_classes)
-        self.part_feat_dec = nn.Linear(in_features, out_features)
+        self.part_type_cls = nn.Linear(dec_cfg['in_features'], num_classes)
+        self.part_feat_dec = get_mlp(**dec_cfg)
     
     def forward(self, x):
         part_type = self.part_type_cls(x)
