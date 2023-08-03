@@ -194,7 +194,32 @@ class GiBUUTransformer(nn.Module):
         )
         return out_xfmr
 
-    def forward(self, src_enc, memory=None, src_padding_mask=None, tgt_padding_mask=None):
+    def decode_aux(
+        self, tgt_in, memory, memory_padding_mask=None, tgt_padding_mask=None
+    ):
+        '''
+        Transformer decoder with intermediate layer output (for auxiliary
+        loss). For useage, see `decode()`.
+        '''
+
+        x = tgt_in
+        norm = self.decoder.norm
+
+        aux_output = []
+        for layer in self.decoder.layers:
+            x = layer(
+                tgt_in, memory,
+                tgt_key_padding_mask=tgt_padding_mask,
+                memory_key_padding_mask=memory_padding_mask
+            )
+
+            aux_output.append(x if norm is None else norm(x))
+        return aux_output
+
+    def forward(
+        self, src_enc, memory=None,
+        src_padding_mask=None, tgt_padding_mask=None, return_aux=False
+    ):
         '''
         Pass input to through the transformer encoder (optional) and  decoder.
 
@@ -207,16 +232,22 @@ class GiBUUTransformer(nn.Module):
         ----------
         src_enc: tensor
             Input in embedding shape, see `encode()`.
+
         memory: tensor, optional
             Memory from tranformer encoder output, see `encode()`.
             If not specified, generates from `encode(src_enc,...)`.
             Default: `None`.
+
         src_padding_mask: tensor, optional
             Input padding mask, see `encode()`. Default: `None`.
+
         tgt_padding_mask: tensor, optional
             Target padding mask, see `decode()`. Default: `None`.
             If `predict_size==True`, generates by `get_tgt_padding_mask` using
             the max predicted size.
+
+        return_aux: bool, optional
+            Return auxiliary output. Default: False
 
         Returns:
         --------
@@ -224,15 +255,20 @@ class GiBUUTransformer(nn.Module):
 
         out_xfmr: tensor
             Transformer decoder output, see `decode()`.
+
         out_logit: tensor
             Logits for output class prediction of shape `(bs, nt, nc)`.
+
         out_feat: tensor
             Output particle features of shape `(bs, nt, nf)`.
             These are usually physics output after `ParticleDecoder`.
+
         memory: tensor, optional
             Transformer encoder output when not specified by input arguments.
+
         size_logit: tensor, optional
             Logits for output size prediction of shape `(bs, ns)`
+
         out_padding_mask: tensor, optional
             Output padding mask of shape `(bs, nt)` when `predict_size==True`.
         '''
@@ -260,9 +296,17 @@ class GiBUUTransformer(nn.Module):
             batch_size, token_size = len(memory), self.max_out_size
 
         tgt_in = self.get_query_input(batch_size, token_size)
-        out_xfmr = self.decode(
-            tgt_in, memory, src_padding_mask, tgt_padding_mask
-        )
+
+        if return_aux:
+            aux_output = self.decode_aux(
+                tgt_in, memory, src_padding_mask, tgt_padding_mask
+            )
+            output['aux_output'] = aux_output[:-1]
+            out_xfmr = aux_output[-1]
+        else:
+            out_xfmr = self.decode(
+                tgt_in, memory, src_padding_mask, tgt_padding_mask
+            )
         out_logit, out_feat = self.particle_decoder(out_xfmr)
 
         output.update({
