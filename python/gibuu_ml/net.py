@@ -111,15 +111,15 @@ class GiBUUTransformer(nn.Module):
             **cfg['transformer']['decoder']
         )
 
-        # query token embedding
-        self.query_embd = nn.Embedding(1, d_model)
-
         # output size prediction
         out_cfg = cfg['transformer']['output']
         self.max_out_size = out_cfg['max_size']
         self.predict_size = out_cfg.get('predict_size', False)
         if self.predict_size:
             self.size_predictor = nn.Linear(d_model, self.max_out_size)
+
+        # query token embedding
+        self.query_embd = nn.Embedding(self.max_out_size, d_model)
 
     def encode(self, src_eid, src_feat, src_padding_mask=None):
         '''
@@ -321,7 +321,7 @@ class GiBUUTransformer(nn.Module):
             Query in embeded space of shape `(bs, nt, nd)`.
         '''
         q_in = self.query_embd.weight.unsqueeze(0).repeat(
-            batch_size, token_size, 1
+            batch_size, 1, 1
         )
         return q_in
 
