@@ -370,7 +370,7 @@ class GiBUUTransformer(nn.Module):
         return q_in
 
 class SetCriterion(nn.Module):
-    def __init__(self, num_classes, class_weight={}):
+    def __init__(self, num_classes, padding_id=0, class_weight={}):
 
         super().__init__()
 
@@ -378,14 +378,16 @@ class SetCriterion(nn.Module):
         for i, w in class_weight.items():
             weight[i] = w
         self.register_buffer('class_weight', weight)
+        self.padding_id = padding_id
     
     def loss_cls(self, out_logit, tgt_label, indices):
 
         batch_idx, src_idx, tgt_idx = indices
         
         # matched target label, shape as out_logit
-        tgt_label_m = torch.zeros(
-            out_logit.shape[:2], dtype=torch.long, device=tgt_label.device,
+        tgt_label_m = torch.full(
+            out_logit.shape[:2], self.padding_id,
+            dtype=torch.long, device=tgt_label.device,
         )
         tgt_label_m[batch_idx, src_idx] = tgt_label[batch_idx, tgt_idx]
         
