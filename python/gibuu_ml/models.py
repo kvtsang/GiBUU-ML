@@ -212,15 +212,18 @@ class GiBUUStepModelV2b(pl.LightningModule):
     def forward_and_loss(self, batch, batch_idx=-1):
         output = self.encode_and_forward(batch)
 
+        loss_sum = 0
+
         loss = self.cal_loss_match(output, batch)
         loss['loss_match'] = loss['loss_match_cls'] + loss['loss_match_feat']
+        loss_sum += loss['loss_match']
         
         if self.predict_size:
             tgt_sizes = torch.count_nonzero(~batch['tgt_padding_mask'], dim=-1)
             loss['loss_size'] = F.cross_entropy(output['size_logit'], tgt_sizes)
-            
-        loss['loss'] = loss['loss_match'] + loss['loss_size']
+            loss_sum += loss['loss_size'] 
 
+        loss['loss'] = loss_sum
         return output, loss
     
     def training_step(self, batch, batch_idx):
@@ -233,7 +236,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
         return loss['loss']
     
     def validation_step(self, batch, batch_idx):
-         output, loss = self.forward_and_loss(
+        output, loss = self.forward_and_loss(
             batch, batch_idx, use_tgt_padding=self.predict_size
         )
 
