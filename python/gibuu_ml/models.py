@@ -161,11 +161,11 @@ class GiBUUStepModelV2b(pl.LightningModule):
         if self.predict_size:
             batch_size = batch['src_eid'].size(dim=0)
             
-            # prepend SOS token in src_eid's 'ni' dimension for output size predictor 
+            # prepend SOS token in src_eid's 'ni' dimension for output size 
             src_eid = F.pad(batch['src_eid'], (1, 0),value=self.SOS_TOKEN)
             
             # prepend SOS token in src_feat's 'ni' dimension 
-            src_feat = F.pad(batch['src_feat'], (0, 0, 1, 0),value=0)
+            src_feat = F.pad(batch['src_feat'], (0, 0, 1, 0), value=0)
             
             # prepend True in src_padding_mask's 'ni' dimension
             src_padding_mask = F.pad(
