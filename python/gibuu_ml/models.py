@@ -141,13 +141,17 @@ class GiBUUStepModelV2b(pl.LightningModule):
 
         self.save_hyperparameters()
                                           
-    def forward(self, src_enc, memory=None, src_padding_mask=None, tgt_padding_mask=None):
+    def forward(
+        self, src_enc, 
+        memory=None, src_padding_mask=None, tgt_padding_mask=None
+    ):
         return self.net(enc_src, memory, src_padding_mask, tgt_padding_mask)
         
-    def encode_and_forward(self, batch):
+    def encode_and_forward(self, batch, use_tgt_padding=False):
         '''
         Embeds input particles and passes to transformer encoder. 
-        If output size predictor is specified, prepends a SOS token to src_eid and modifies
+        If output size predictor is specified, 
+        prepends a SOS token to src_eid and modifies
         src_feat and src_padding_mask accordingly. 
         '''
         src_eid = batch['src_eid']
@@ -170,8 +174,10 @@ class GiBUUStepModelV2b(pl.LightningModule):
             
         src_enc, memory = self.net.encode(src_eid, src_feat, src_padding_mask) 
         
-        # provide network true output size during training, so pass batch['tgt_padding_mask']
-        output = self.net(src_enc, memory, src_padding_mask, batch['tgt_padding_mask'])
+        output = self.net(
+            src_enc, memory, src_padding_mask, 
+            batch['tgt_padding_mask'] if use_tgt_padding else None
+        )
         output['src_enc'] = src_enc
         output['memory'] = memory
         return output
@@ -182,7 +188,8 @@ class GiBUUStepModelV2b(pl.LightningModule):
             output['out_feat'].detach(),
             batch['tgt_eid'],
             batch['tgt_feat'],
-            batch['tgt_padding_mask'],
+            out_padding_mask=output.get('out_padding_mask', None),
+            tgt_padding_mask=batch['tgt_padding_mask'],
             device=self.device,
         )
         output['matching_indices'] = indices
@@ -205,32 +212,31 @@ class GiBUUStepModelV2b(pl.LightningModule):
     def forward_and_loss(self, batch, batch_idx=-1):
         output = self.encode_and_forward(batch)
 
-        try:
-            self.match(output, batch)
-        except ValueError:
-            torch.save(output, f'debug_output_{batch_idx}.pkl')
-            torch.save(batch, f'debug_batch_{batch_idx}.pkl')
-
         loss = self.cal_loss_match(output, batch)
         loss['loss_match'] = loss['loss_match_cls'] + loss['loss_match_feat']
         
         if self.predict_size:
             tgt_sizes = torch.count_nonzero(~batch['tgt_padding_mask'], dim=-1)
-            loss['loss_size_logit'] = F.cross_entropy(output['size_logit'], tgt_sizes)
+            loss['loss_size'] = F.cross_entropy(output['size_logit'], tgt_sizes)
             
-        loss['loss'] = loss['loss_match'] + loss['loss_size_logit']
+        loss['loss'] = loss['loss_match'] + loss['loss_size']
 
         return output, loss
     
     def training_step(self, batch, batch_idx):
-        output, loss = self.forward_and_loss(batch, batch_idx)
+        output, loss = self.forward_and_loss(
+            batch, batch_idx, use_tgt_padding=self.predict_size
+        )
         for k,v in loss.items():
             self.log(k, v, prog_bar=k=='loss', on_epoch=True, sync_dist=True)
 
         return loss['loss']
     
     def validation_step(self, batch, batch_idx):
-        output, loss = self.forward_and_loss(batch, batch_idx)
+         output, loss = self.forward_and_loss(
+            batch, batch_idx, use_tgt_padding=self.predict_size
+        )
+
         for k,v in loss.items():
             self.log(f'val_{k}', v, sync_dist=True)
 
