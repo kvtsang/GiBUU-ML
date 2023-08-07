@@ -280,22 +280,20 @@ class GiBUUTransformer(nn.Module):
             output['memory'] = memory
 
         if self.predict_size:
+            # use first element of memory to predict size
             size_logit = self.size_predictor(memory[:,0])
             output['size_logit'] = size_logit
 
+            # generate `tgt_padding_mask` from predicted size
+            # for training, it is provided with truth padding mask
             if tgt_padding_mask is None:
                 n_outs = size_logit.argmax(dim=-1)
                 tgt_padding_mask = self.get_tgt_padding_mask(
                     n_outs, device=src_enc.device
                 )
-                output['out_padding_mask'] = tgt_padding_mask
+            output['out_padding_mask'] = tgt_padding_mask
 
-        if tgt_padding_mask is not None:
-            batch_size, token_size = tgt_padding_mask.shape
-        else:
-            batch_size, token_size = len(memory), self.max_out_size
-
-        tgt_in = self.get_query_input(batch_size, token_size)
+        tgt_in = self.get_query_input(batch_size=len(memory))
 
         if return_aux:
             aux_output = self.decode_aux(
@@ -344,7 +342,7 @@ class GiBUUTransformer(nn.Module):
             mask[b,n:] = True
         return mask
 
-    def get_query_input(self, batch_size, token_size):
+    def get_query_input(self, batch_size):
         '''
         Generate input query for transformer decoder.
 
@@ -356,8 +354,6 @@ class GiBUUTransformer(nn.Module):
         ----------
         batch_size: int
             Batch size.
-        token_size: int
-            Number of target to query (i.e. `nt`).
 
         Returns:
         --------
