@@ -132,6 +132,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
         model_cfg = cfg['model']
 
         self.net = GiBUUTransformer(model_cfg)
+        self.aux_loss = model_cfg.get('aux_loss', False)
         self.crit = SetCriterion(**model_cfg['set_criterion'])
 
         opt_cfg = cfg.setdefault('optimizer', {})
@@ -145,9 +146,12 @@ class GiBUUStepModelV2b(pl.LightningModule):
 
     def forward(
         self, src_enc, 
-        memory=None, src_padding_mask=None, tgt_padding_mask=None
+        memory=None, src_padding_mask=None, tgt_padding_mask=None,
     ):
-        return self.net(src_enc, memory, src_padding_mask, tgt_padding_mask)
+        return self.net(
+            src_enc, memory, src_padding_mask, tgt_padding_mask,
+            return_aux=self.aux_loss,
+        )
         
     def encode(self, batch):
         '''
@@ -215,7 +219,39 @@ class GiBUUStepModelV2b(pl.LightningModule):
         )
 
         return loss
-    
+
+    def cal_loss_aux(self, output, batch):
+        aux_output = output['aux_output']
+
+        loss = {'loss_aux': 0}
+        for i, out in enumerate(aux_output):
+            out_logit, out_feat = self.net.particle_decoder(out)
+            indices = max_bipartite_match(
+                out_logit.detach(),
+                out_feat.detach(),
+                batch['tgt_eid'],
+                batch['tgt_feat'],
+                batch['tgt_padding_mask'],
+                device=self.device,
+            )
+
+            loss_i = self.crit(
+                out_logit, out_feat, 
+                batch['tgt_eid'], batch['tgt_feat'],
+                indices
+            )
+            
+            loss_cls = loss_i['loss_match_cls']
+            loss_feat = loss_i['loss_match_feat']
+            loss_aux_i = loss_cls + loss_feat
+
+            loss[f'loss_aux{i}_cls'] = loss_cls
+            loss[f'loss_aux{i}_feat'] = loss_feat
+            loss[f'loss_aux{i}'] = loss_aux_i
+            loss['loss_aux'] += loss_aux_i
+
+        return loss
+
     def forward_and_loss(self, batch, use_tgt_padding):
         output = self.encode_and_forward(batch, use_tgt_padding)
 
@@ -229,6 +265,10 @@ class GiBUUStepModelV2b(pl.LightningModule):
             tgt_sizes = torch.count_nonzero(~batch['tgt_padding_mask'], dim=-1)
             loss['loss_size'] = F.cross_entropy(output['size_logit'], tgt_sizes)
             loss_sum += loss['loss_size'] 
+
+        if self.aux_loss:
+            loss.update(self.cal_loss_aux(output, batch))
+            loss_sum += loss['loss_aux']
 
         loss['loss'] = loss_sum
         return output, loss
