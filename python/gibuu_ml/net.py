@@ -314,8 +314,7 @@ class GiBUUTransformer(nn.Module):
         })
         return output
 
-    @staticmethod
-    def get_tgt_padding_mask(tgt_sizes, device=None):
+    def get_tgt_padding_mask(self, tgt_sizes, device=None):
         '''
         Generate tpadding mask from a list of target sizes.
 
@@ -336,8 +335,8 @@ class GiBUUTransformer(nn.Module):
         '''
     
         batch_size = len(tgt_sizes)
-        token_size = max(tgt_sizes)
-        mask = torch.full((batch_size, token_size), False, device=device)
+        out_size = self.max_out_size
+        mask = torch.full((batch_size, out_size), False, device=device)
         for b, n in enumerate(tgt_sizes):
             mask[b,n:] = True
         return mask
@@ -376,6 +375,15 @@ class SetCriterion(nn.Module):
         self.register_buffer('class_weight', weight)
         self.padding_id = padding_id
     
+    def loss_cls_without_padding(self, out_logit, tgt_label, indices):
+        batch_idx, src_idx, tgt_idx = indices
+
+        loss = nn.functional.cross_entropy(
+            out_logit[batch_idx, src_idx],
+            tgt_label[batch_idx, tgt_idx]
+        )
+        return loss
+
     def loss_cls(self, out_logit, tgt_label, indices):
 
         batch_idx, src_idx, tgt_idx = indices
@@ -401,11 +409,18 @@ class SetCriterion(nn.Module):
         )
         return loss
         
-    def forward(self, out_logit, out_feat, tgt_label, tgt_feat, indices):
+    def forward(
+        self, out_logit, out_feat, tgt_label, tgt_feat, indices,
+        exclude_padding=False,
+    ):
+
+        if exclude_padding:
+            loss_cls_func = self.loss_cls_without_padding 
+        else:
+            loss_cls_func = self.loss_cls
 
         loss = {
-            'loss_match_cls': self.loss_cls(out_logit, tgt_label, indices),
+            'loss_match_cls': loss_cls_func(out_logit, tgt_label, indices),
             'loss_match_feat': self.loss_feat(out_feat, tgt_feat, indices),
         }
-        
         return loss

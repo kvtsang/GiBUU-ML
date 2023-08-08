@@ -130,24 +130,26 @@ class GiBUUStepModelV2b(pl.LightningModule):
         
         
         model_cfg = cfg['model']
+
         self.net = GiBUUTransformer(model_cfg)
         self.crit = SetCriterion(**model_cfg['set_criterion'])
-        self.predict_size = model_cfg['transformer']['output'].get('predict_size', False)
-        if self.predict_size:
-            self.SOS_TOKEN = SOS_TOKEN
 
         opt_cfg = cfg.setdefault('optimizer', {})
         self.lr = opt_cfg.setdefault('lr', 5e-2)
 
         self.save_hyperparameters()
                                           
+    @property
+    def predict_size(self):
+        return self.net.predict_size
+
     def forward(
         self, src_enc, 
         memory=None, src_padding_mask=None, tgt_padding_mask=None
     ):
-        return self.net(enc_src, memory, src_padding_mask, tgt_padding_mask)
+        return self.net(src_enc, memory, src_padding_mask, tgt_padding_mask)
         
-    def encode_and_forward(self, batch, use_tgt_padding=False):
+    def encode(self, batch):
         '''
         Embeds input particles and passes to transformer encoder. 
         If output size predictor is specified, 
@@ -162,7 +164,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
             batch_size = batch['src_eid'].size(dim=0)
             
             # prepend SOS token in src_eid's 'ni' dimension for output size 
-            src_eid = F.pad(batch['src_eid'], (1, 0),value=self.SOS_TOKEN)
+            src_eid = F.pad(batch['src_eid'], (1, 0),value=SOS_TOKEN)
             
             # prepend SOS token in src_feat's 'ni' dimension 
             src_feat = F.pad(batch['src_feat'], (0, 0, 1, 0), value=0)
@@ -173,8 +175,12 @@ class GiBUUStepModelV2b(pl.LightningModule):
             )
             
         src_enc, memory = self.net.encode(src_eid, src_feat, src_padding_mask) 
-        
-        output = self.net(
+        return src_enc, memory, src_padding_mask
+
+    def encode_and_forward(self, batch, use_tgt_padding):
+        src_enc, memory, src_padding_mask = self.encode(batch)
+                
+        output = self(
             src_enc, memory, src_padding_mask, 
             batch['tgt_padding_mask'] if use_tgt_padding else None
         )
@@ -205,12 +211,13 @@ class GiBUUStepModelV2b(pl.LightningModule):
             batch['tgt_eid'],
             batch['tgt_feat'], 
             output['matching_indices'],
+            exclude_padding=self.predict_size,
         )
 
         return loss
     
-    def forward_and_loss(self, batch, batch_idx=-1):
-        output = self.encode_and_forward(batch)
+    def forward_and_loss(self, batch, use_tgt_padding):
+        output = self.encode_and_forward(batch, use_tgt_padding)
 
         loss_sum = 0
 
