@@ -275,7 +275,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         output, loss = self.forward_and_loss(
-            batch, batch_idx, use_tgt_padding=self.predict_size
+            batch, use_tgt_padding=self.predict_size
         )
         for k,v in loss.items():
             self.log(k, v, prog_bar=k=='loss', on_epoch=True, sync_dist=True)
@@ -284,7 +284,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         output, loss = self.forward_and_loss(
-            batch, batch_idx, use_tgt_padding=self.predict_size
+            batch,  use_tgt_padding=self.predict_size
         )
 
         for k,v in loss.items():
