@@ -236,9 +236,8 @@ class GiBUUStepModelV2b(pl.LightningModule):
             )
 
             loss_i = self.crit(
-                out_logit, out_feat, 
-                batch['tgt_eid'], batch['tgt_feat'],
-                indices
+                out_logit, out_feat, batch['tgt_eid'], batch['tgt_feat'], 
+                indices, exclude_padding=self.predict_size,
             )
             
             loss_cls = loss_i['loss_match_cls']
