@@ -231,7 +231,8 @@ class GiBUUStepModelV2b(pl.LightningModule):
                 out_feat.detach(),
                 batch['tgt_eid'],
                 batch['tgt_feat'],
-                batch['tgt_padding_mask'],
+                out_padding_mask=output.get('out_padding_mask', None),
+                tgt_padding_mask=batch['tgt_padding_mask'],
                 device=self.device,
             )
 
