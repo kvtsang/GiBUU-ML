@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 def get_mlp(
@@ -375,52 +376,40 @@ class SetCriterion(nn.Module):
         self.register_buffer('class_weight', weight)
         self.padding_id = padding_id
     
-    def loss_cls_without_padding(self, out_logit, tgt_label, indices):
-        batch_idx, src_idx, tgt_idx = indices
-
-        loss = nn.functional.cross_entropy(
-            out_logit[batch_idx, src_idx],
-            tgt_label[batch_idx, tgt_idx]
-        )
-        return loss
-
     def loss_cls(self, out_logit, tgt_label, indices):
-
         batch_idx, src_idx, tgt_idx = indices
-        
-        # matched target label, shape as out_logit
-        tgt_label_m = torch.full(
-            out_logit.shape[:2], self.padding_id,
-            dtype=torch.long, device=tgt_label.device,
+        loss = {}
+
+        # for matched pairs
+        loss['loss_match_cls'] = F.cross_entropy(
+            out_logit[batch_idx, src_idx],
+            tgt_label[batch_idx, tgt_idx],
+            self.class_weight,
         )
-        tgt_label_m[batch_idx, src_idx] = tgt_label[batch_idx, tgt_idx]
-        
-        loss = nn.functional.cross_entropy(
-            out_logit.swapaxes(1,2), tgt_label_m, self.class_weight,
+
+        # for unmatched predictions
+        mask = torch.full(
+            out_logit.shape[:2], True, dtype=bool, device=out_logit.device
+        )
+        mask[batch_idx, src_idx] = False
+        null_label = torch.full_like(mask, self.padding_id, dtype=torch.int64)
+        loss['loss_match_null'] = F.cross_entropy(
+            out_logit[mask], null_label[mask], self.class_weight
         )
         return loss
-    
+
     def loss_feat(self, out_feat, tgt_feat, indices):
 
         batch_idx, src_idx, tgt_idx = indices
         
-        loss = nn.functional.l1_loss(
+        loss = F.l1_loss(
             out_feat[batch_idx, src_idx], tgt_feat[batch_idx, tgt_idx]
         )
         return loss
         
-    def forward(
-        self, out_logit, out_feat, tgt_label, tgt_feat, indices,
-        exclude_padding=False,
-    ):
+    def forward(self, out_logit, out_feat, tgt_label, tgt_feat, indices):
 
-        if exclude_padding:
-            loss_cls_func = self.loss_cls_without_padding 
-        else:
-            loss_cls_func = self.loss_cls
+        loss = self.loss_cls(out_logit, tgt_label, indices)
+        loss['loss_match_feat'] = self.loss_feat(out_feat, tgt_feat, indices)
 
-        loss = {
-            'loss_match_cls': loss_cls_func(out_logit, tgt_label, indices),
-            'loss_match_feat': self.loss_feat(out_feat, tgt_feat, indices),
-        }
         return loss

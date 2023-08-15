@@ -37,7 +37,7 @@ class GiBUUStepModelV2a(pl.LightningModule):
             output['out_feat'].detach(),
             batch['tgt_eid'],
             batch['tgt_feat'],
-            batch['tgt_padding_mask'],
+            tgt_padding_mask=batch['tgt_padding_mask'],
             device=self.device,
         )
         output['matching_indices'] = indices
@@ -87,22 +87,14 @@ class GiBUUStepModelV2a(pl.LightningModule):
     def forward_and_loss(self, batch, batch_idx=-1):
         output = self.encode_and_forward(batch)
 
-        try:
-            self.match(output, batch)
-        except ValueError:
-            torch.save(output, f'debug_output_{batch_idx}.pkl')
-            torch.save(batch, f'debug_batch_{batch_idx}.pkl')
-
+        self.match(output, batch)
+       
         loss = self.cal_loss_match(output, batch)
         loss.update(self.cal_loss_self(output, batch, 'src'))
         loss.update(self.cal_loss_self(output, batch, 'tgt'))
 
-        loss['loss_match'] = loss['loss_match_cls'] + loss['loss_match_feat']
-        loss['loss_self'] = 0.5 * (
-            loss['loss_src_cls'] + loss['loss_src_feat']
-            + loss['loss_tgt_cls'] + loss['loss_tgt_feat']
-        )
-        loss['loss'] = loss['loss_match']  + loss['loss_self']
+        loss['loss'] = loss['loss_match_cls'] + loss['loss_match_feat'] \
+            + loss['loss_match_null']
 
         return output, loss
 
