@@ -6,7 +6,7 @@ from scipy.optimize import linear_sum_assignment
 def max_bipartite_match(
     out_logit, out_feat, tgt_label, tgt_feat,
     out_padding_mask=None, tgt_padding_mask=None,
-    return_numpy=False, device=None
+    return_numpy=False, ignore_null_pred=False, null_id=0, device=None
 ):
     '''
     Match output to target in permutations to minimize the cost function.
@@ -34,13 +34,19 @@ def max_bipartite_match(
         target features of shape `(bs, nt, nf)`.
 
     out_padding_mask: tensor, optional
-        output padding mask of shape `(bs, ni)`. Defualt: `None`.
+        output padding mask of shape `(bs, ni)`. Default: `None`.
 
     tgt_padding_mask: tensor
-        output padding mask of shape `(bs, nt)`. Default: `None`.
+        target padding mask of shape `(bs, nt)`. Default: `None`.
 
     return_numpy: bool
         return as numpy arrays. Default: `False`
+        
+    ignore_null_pred: bool
+        ignore null predictions when matching. Default: `False`.
+        
+    null_id: int
+        particle type ID corresponding to null particle. Default: `0`.
 
     device: torch.device
         output tensor device. Default: `None`
@@ -50,7 +56,7 @@ def max_bipartite_match(
     batch_idx, src_idx, tgt_idx: tensors
         Indices for matched pairs of shape `(bs, min(ni,nt))`.
     '''
-
+    
     gen_padding_mask = lambda x : torch.full(
         x.shape[:2], False, dtype=bool, device=x.device
     ) 
@@ -60,6 +66,11 @@ def max_bipartite_match(
 
     if tgt_padding_mask is None:
         tgt_padding_mask = gen_padding_mask(tgt_label)
+        
+    if ignore_null_pred:
+        out_cls = out_logit.argmax(-1)
+        out_null_mask = out_cls==null_id
+        out_padding_mask |= out_null_mask
 
     src_idx = []
     tgt_idx = []
