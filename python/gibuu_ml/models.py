@@ -134,6 +134,17 @@ class GiBUUStepModelV2b(pl.LightningModule):
         self.net = GiBUUTransformer(model_cfg)
         self.aux_loss = model_cfg.get('aux_loss', False)
         self.crit = SetCriterion(**model_cfg['set_criterion'])
+        
+        loss_cfg = model_cfg['loss']
+        
+        # store various loss weightings
+        self.loss_match_w = loss_cfg.get('loss_match', 1)
+        self.loss_cls_w = loss_cfg.get('loss_match_cls', 1)
+        self.loss_feat_w = loss_cfg.get('loss_match_feat', 1)
+        if self.predict_size:
+            self.loss_size_w = loss_cfg.get('loss_size', 1)
+        if self.aux_loss:
+            self.loss_aux_w = loss_cfg.get('loss_aux_w', 1)
 
         opt_cfg = cfg.setdefault('optimizer', {})
         self.lr = opt_cfg.setdefault('lr', 5e-2)
@@ -243,7 +254,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
             
             loss_cls = loss_i['loss_match_cls']
             loss_feat = loss_i['loss_match_feat']
-            loss_aux_i = loss_cls + loss_feat
+            loss_aux_i = self.loss_cls_w*loss_cls + self.loss_feat_w*loss_feat
 
             loss[f'loss_aux{i}_cls'] = loss_cls
             loss[f'loss_aux{i}_feat'] = loss_feat
@@ -258,17 +269,17 @@ class GiBUUStepModelV2b(pl.LightningModule):
         loss_sum = 0
 
         loss = self.cal_loss_match(output, batch)
-        loss['loss_match'] = loss['loss_match_cls'] + loss['loss_match_feat']
-        loss_sum += loss['loss_match']
+        loss['loss_match'] = self.loss_cls_w*loss['loss_match_cls'] + self.loss_feat_w*loss['loss_match_feat']
+        loss_sum += self.loss_match_w*loss['loss_match']
         
         if self.predict_size:
             tgt_sizes = torch.count_nonzero(~batch['tgt_padding_mask'], dim=-1)
             loss['loss_size'] = F.cross_entropy(output['size_logit'], tgt_sizes)
-            loss_sum += loss['loss_size'] 
+            loss_sum += self.loss_size_w*loss['loss_size'] 
 
         if self.aux_loss:
             loss.update(self.cal_loss_aux(output, batch))
-            loss_sum += loss['loss_aux']
+            loss_sum += self.loss_aux_w*loss['loss_aux']
 
         loss['loss'] = loss_sum
         return output, loss
@@ -284,7 +295,7 @@ class GiBUUStepModelV2b(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         output, loss = self.forward_and_loss(
-            batch,  use_tgt_padding=self.predict_size
+            batch, use_tgt_padding=self.predict_size
         )
 
         for k,v in loss.items():
